@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import "./App.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Float } from "@react-three/drei";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -67,113 +65,6 @@ const safeFetch = async (url, options = {}) => {
   }
 };
 
-const fract = (n) => n - Math.floor(n);
-
-function CursorReactiveModel({ cursor }) {
-  const groupRef = useRef(null);
-  const chalkRef = useRef(null);
-
-  const dust = useMemo(
-    () =>
-      Array.from({ length: 32 }, (_, i) => {
-        const xSeed = Math.sin(i * 12.9898) * 43758.5453;
-        const ySeed = Math.sin((i + 11) * 78.233) * 24634.6345;
-        const zSeed = Math.sin((i + 29) * 39.425) * 9543.1432;
-        const sSeed = Math.sin((i + 7) * 95.933) * 12874.233;
-        return {
-          x: (fract(xSeed) - 0.5) * 0.8,
-          y: fract(ySeed) * 0.45,
-          z: fract(zSeed) * 0.3,
-          s: 0.015 + fract(sSeed) * 0.03,
-        };
-      }),
-    []
-  );
-
-  useFrame((_state, delta) => {
-    if (groupRef.current) {
-      const targetY = cursor.current.x * 0.55;
-      const targetX = cursor.current.y * 0.25;
-      groupRef.current.rotation.y += (targetY - groupRef.current.rotation.y) * 4 * delta;
-      groupRef.current.rotation.x += (targetX - groupRef.current.rotation.x) * 4 * delta;
-    }
-    if (chalkRef.current) {
-      const tx = cursor.current.x * 0.25;
-      const ty = 1.8 + cursor.current.y * 0.2;
-      chalkRef.current.position.x += (tx - chalkRef.current.position.x) * 6 * delta;
-      chalkRef.current.position.y += (ty - chalkRef.current.position.y) * 6 * delta;
-    }
-  });
-
-  return (
-    <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.4}>
-      <group ref={groupRef} position={[0, -0.8, 0]}>
-        <mesh position={[0, 1.4, 0]} castShadow>
-          <sphereGeometry args={[0.74, 48, 48]} />
-          <meshStandardMaterial color="#2f1d16" roughness={0.5} metalness={0.1} />
-        </mesh>
-
-        <mesh position={[0, 0.35, 0]} castShadow>
-          <cylinderGeometry args={[0.55, 0.62, 1.25, 48]} />
-          <meshStandardMaterial color="#2b1a14" roughness={0.62} metalness={0.08} />
-        </mesh>
-
-        <mesh position={[0, 2.03, 0.05]} castShadow>
-          <sphereGeometry args={[0.72, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.42]} />
-          <meshStandardMaterial color="#101015" roughness={0.92} metalness={0.05} />
-        </mesh>
-
-        {[-0.36, -0.18, 0, 0.18, 0.36].map((x, idx) => (
-          <mesh key={x} position={[x, 2.06 - Math.abs(x) * 0.04, 0.42]} rotation={[1.52, 0, 0]}>
-            <torusGeometry args={[0.15, 0.015, 16, 32, Math.PI]} />
-            <meshStandardMaterial color={idx % 2 === 0 ? "#1a1a1f" : "#141419"} roughness={0.95} />
-          </mesh>
-        ))}
-
-        <mesh position={[0, 1.86, 0.66]}>
-          <boxGeometry args={[1.06, 0.02, 0.03]} />
-          <meshStandardMaterial color="#ece8e3" emissive="#ece8e3" emissiveIntensity={0.16} />
-        </mesh>
-
-        <group ref={chalkRef} position={[0, 1.8, 0.72]}>
-          {dust.map((p, i) => (
-            <mesh key={i} position={[p.x, p.y, p.z]}>
-              <sphereGeometry args={[p.s, 8, 8]} />
-              <meshStandardMaterial color="#f2efea" transparent opacity={0.62} />
-            </mesh>
-          ))}
-        </group>
-      </group>
-    </Float>
-  );
-}
-
-function Hero3DPanel() {
-  const cursor = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const onMove = (e) => {
-      const x = (e.clientX / window.innerWidth) * 2 - 1;
-      const y = (e.clientY / window.innerHeight) * 2 - 1;
-      cursor.current = { x, y };
-    };
-    window.addEventListener("pointermove", onMove);
-    return () => window.removeEventListener("pointermove", onMove);
-  }, []);
-
-  return (
-    <div className="hero-3d-panel" aria-hidden="true">
-      <Canvas camera={{ position: [0, 1.6, 3.8], fov: 36 }} shadows>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[2, 5, 2]} intensity={1.15} castShadow />
-        <pointLight position={[-2, 2, 2]} intensity={0.7} color="#7aa2ff" />
-        <CursorReactiveModel cursor={cursor} />
-      </Canvas>
-      <div className="hero-3d-note">Interactive cut preview (desktop web only)</div>
-    </div>
-  );
-}
-
 function App() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [token] = useState(localStorage.getItem("token") || "");
@@ -198,21 +89,6 @@ function App() {
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" });
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState("");
-  const [desktopWeb, setDesktopWeb] = useState(false);
-
-  useEffect(() => {
-    const updateLayout = () => {
-      const isDesktop =
-        window.matchMedia("(min-width: 901px)").matches &&
-        window.matchMedia("(pointer: fine)").matches &&
-        !window.matchMedia("(hover: none)").matches;
-      setDesktopWeb(isDesktop);
-    };
-
-    updateLayout();
-    window.addEventListener("resize", updateLayout);
-    return () => window.removeEventListener("resize", updateLayout);
-  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -397,11 +273,6 @@ function App() {
             <span className="hero-qol-pill">Owner managed availability</span>
           </div>
         </div>
-        {desktopWeb ? (
-          <Hero3DPanel />
-        ) : (
-          <div className="hero-mobile-note">3D live preview is available on desktop web only.</div>
-        )}
       </header>
 
       <section className="section services" id="services">
