@@ -137,12 +137,27 @@ if (IS_PRODUCTION) {
   // Serve static assets from the Vite build
   app.use(express.static(FRONTEND_DIST, { maxAge: "1y", immutable: true }));
 
-  // SPA fallback: any non-API route serves index.html
+  const INDEX_HTML = path.join(FRONTEND_DIST, "index.html");
+
+  // SPA fallback: any non-API route serves index.html (e.g. /owner, /, /anything)
   app.get("*", (req, res) => {
     if (req.originalUrl.startsWith("/api/")) {
       return res.status(404).json({ message: "API route not found" });
     }
-    res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+    res.sendFile(INDEX_HTML, (err) => {
+      if (err) {
+        console.error("[SPA fallback] Failed to send index.html:", err.message);
+        if (err.code === "ENOENT") {
+          return res.status(503).json({
+            message: "Frontend not available. Ensure frontend/dist is built and deployed.",
+            code: "FRONTEND_MISSING",
+          });
+        }
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Error serving page" });
+        }
+      }
+    });
   });
 } else {
   // Development root
