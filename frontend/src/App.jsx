@@ -254,11 +254,6 @@ function App() {
             <span className="headline-accent">Inner</span>
             <span className="headline-emphasis">DAWG</span>
           </h1>
-          <p className="hero-copy">
-            If you have been struggling to find a vetted barber in your area look no further! Here for
-            college and bringing all the skills right on with me to bring to best haircuts and styles to
-            each client. Here at d4gcutz you will always be in good hands.
-          </p>
           <div className="hero-actions">
             <Button className="primary" onClick={() => document.querySelector("#book").scrollIntoView({ behavior: "smooth" })}>
               Book a Session
@@ -266,11 +261,6 @@ function App() {
             <Button variant="ghost" className="ghost" onClick={() => document.querySelector("#barber").scrollIntoView({ behavior: "smooth" })}>
               Meet the barber
             </Button>
-          </div>
-          <div className="hero-qol-row">
-            <span className="hero-qol-pill">Fast slot booking</span>
-            <span className="hero-qol-pill">Text confirmation</span>
-            <span className="hero-qol-pill">Owner managed availability</span>
           </div>
         </div>
       </header>
