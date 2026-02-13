@@ -4,7 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
-const { init, seedAdmin } = require("./src/db/db");
+const { init, seedAdmin, seedWeekdayEveningAvailability } = require("./src/db/db");
 const { globalLimiter } = require("./src/middleware/rateLimiter");
 const errorHandler = require("./src/middleware/errorHandler");
 
@@ -116,6 +116,7 @@ app.use((req, _res, next) => {
 /* ---------- Database ---------- */
 init();
 seedAdmin();
+seedWeekdayEveningAvailability();
 
 /* ---------- API Routes ---------- */
 app.use("/api/auth", authRoutes);

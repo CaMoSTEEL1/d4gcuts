@@ -5,6 +5,15 @@ const bcrypt = require("bcryptjs");
 const dbPath = path.join(__dirname, "..", "..", "data.sqlite");
 const db = new sqlite3.Database(dbPath);
 
+const EVENING_SLOTS = [
+  ["16:00", "17:00"],
+  ["17:00", "18:00"],
+  ["18:00", "19:00"],
+  ["19:00", "20:00"],
+  ["20:00", "21:00"],
+  ["21:00", "22:00"],
+];
+
 const init = () => {
   // Enable WAL mode for better concurrent read performance
   db.run("PRAGMA journal_mode=WAL");
@@ -142,4 +151,63 @@ const seedAdmin = () => {
   });
 };
 
-module.exports = { db, init, seedAdmin };
+/**
+ * Seeds weekday (Mon-Fri) availability in 1-hour blocks from 4:00 PM to 10:00 PM.
+ * Idempotent: only inserts slots that do not already exist.
+ */
+const seedWeekdayEveningAvailability = ({ daysAhead = 90 } = {}) => {
+  const start = new Date();
+  const end = new Date();
+  end.setDate(start.getDate() + daysAhead);
+
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+
+    const stmt = db.prepare(
+      `INSERT INTO availability (date, start_time, end_time, is_open)
+       SELECT ?, ?, ?, 1
+       WHERE NOT EXISTS (
+         SELECT 1 FROM availability
+         WHERE date = ? AND start_time = ? AND end_time = ?
+       )`
+    );
+
+    let inserted = 0;
+
+    for (let current = new Date(start); current <= end; current.setDate(current.getDate() + 1)) {
+      const day = current.getDay();
+      // Weekdays only: Monday (1) through Friday (5)
+      if (day < 1 || day > 5) continue;
+
+      const dateText = current.toISOString().slice(0, 10);
+
+      for (const [startTime, endTime] of EVENING_SLOTS) {
+        stmt.run(
+          [dateText, startTime, endTime, dateText, startTime, endTime],
+          function () {
+            inserted += this.changes;
+          }
+        );
+      }
+    }
+
+    stmt.finalize((err) => {
+      if (err) {
+        db.run("ROLLBACK");
+        console.error("[Seed] Failed to seed weekday evening availability:", err.message);
+        return;
+      }
+
+      db.run("COMMIT", (commitErr) => {
+        if (commitErr) {
+          db.run("ROLLBACK");
+          console.error("[Seed] Failed to commit weekday availability seed:", commitErr.message);
+          return;
+        }
+        console.log(`[Seed] Weekday evening availability ensured. Inserted: ${inserted}`);
+      });
+    });
+  });
+};
+
+module.exports = { db, init, seedAdmin, seedWeekdayEveningAvailability };
