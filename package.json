@@ -3,15 +3,16 @@
   "version": "1.0.0",
   "description": "d4gcutz barbershop booking platform",
   "private": true,
+  "main": "app.js",
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "install:all": "cd backend && npm install --production && cd ../frontend && npm install",
-    "build": "cd frontend && npm run build",
-    "start": "cd backend && node server.js",
-    "dev": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install --prefix backend --production && npm install --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "node app.js",
+    "dev": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
     "postinstall": "npm run install:all && npm run build"
   }
 }

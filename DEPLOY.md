@@ -12,7 +12,7 @@ In production, the app runs as a **single Node.js process**:
 
 ## Prerequisites
 
-- Hostinger **VPS** or **Node.js hosting** plan
+- Hostinger **Node.js hosting** plan (Business or higher)
 - Node.js 18+ on the server
 - Git access to push your repo
 
@@ -33,29 +33,37 @@ git push -u origin main
 
 - In Hostinger panel, go to **Websites > Manage > Git**
 - Connect your GitHub repo
-- Set the branch to `main`
+- Set the branch to `main` (or `master`)
 
 ### 3. Set the Node.js entry point
 
 In Hostinger's Node.js settings:
 - **Application root**: `/` (project root)
-- **Application startup file**: `backend/server.js`
+- **Application startup file**: `app.js`
 - **Node.js version**: 18+ (20 recommended)
+
+> **Important**: The startup file is `app.js` in the project root — NOT `backend/server.js`.  
+> `app.js` is a thin wrapper that bootstraps the backend server.
 
 ### 4. Install dependencies and build
 
 SSH into your server and run from the project root:
 
 ```bash
-cd ~/public_html   # or wherever your app lives
-npm install --production
-cd frontend && npm install && npm run build && cd ..
-cd backend && npm install --production && cd ..
+npm install
 ```
 
-Or if Hostinger supports custom build commands:
+This automatically runs `postinstall` which:
+1. Installs backend dependencies (production only)
+2. Installs frontend dependencies
+3. Builds the frontend into `frontend/dist/`
+
+If automatic build fails, run manually:
+
 ```bash
-npm run postinstall
+npm install --prefix backend --production
+npm install --prefix frontend
+npm run build --prefix frontend
 ```
 
 ### 5. Configure environment variables
@@ -74,13 +82,18 @@ nano backend/.env
 - Twilio credentials (if you want SMS notifications)
 - Stripe secret (if you want payments)
 
+You can also set environment variables via the Hostinger panel under
+**Websites > Manage > Advanced > Node.js > Environment Variables**.
+
 ### 6. Start the app
 
-```bash
-cd backend && NODE_ENV=production node server.js
-```
+Hostinger starts the app automatically using the startup file (`app.js`).
 
-Or configure Hostinger to run: `npm start` from the project root.
+To start manually:
+
+```bash
+NODE_ENV=production node app.js
+```
 
 The server will start on the `PORT` specified in `.env` (default: 3000).
 
@@ -122,8 +135,8 @@ git push
 ```
 
 Then on Hostinger:
-1. Pull the latest code
-2. Rebuild the frontend: `cd frontend && npm run build`
+1. Pull the latest code (or use auto-deploy if configured)
+2. Rebuild the frontend: `npm run build`
 3. Restart the Node.js app from the Hostinger panel
 
 ---
@@ -132,8 +145,10 @@ Then on Hostinger:
 
 ```
 d4gcutz/
+├── app.js                 ← Hostinger startup file (entry point)
+├── package.json           ← Root scripts (main: "app.js")
 ├── backend/
-│   ├── server.js          ← Entry point
+│   ├── server.js          ← Express server (loaded by app.js)
 │   ├── .env               ← Your production env (never commit)
 │   ├── data.sqlite        ← Database (auto-created)
 │   ├── src/               ← API routes, middleware, DB
@@ -141,7 +156,6 @@ d4gcutz/
 ├── frontend/
 │   ├── dist/              ← Built React app (served by Express)
 │   └── node_modules/      ← Needed for build only
-├── package.json           ← Root scripts
 ├── .gitignore
 └── DEPLOY.md              ← This file
 ```
@@ -150,18 +164,27 @@ d4gcutz/
 
 ## Troubleshooting
 
+**Hostinger says "framework not supported" or "incorrect structure":**
+- Make sure `app.js` exists in the project root
+- Set the startup file to `app.js` (not `backend/server.js`)
+- Make sure `package.json` is in the project root with `"main": "app.js"`
+
 **App won't start:**
-- Check `JWT_SECRET` is set in `.env`
+- Check `JWT_SECRET` is set in `backend/.env`
 - Check `NODE_ENV=production` is set
 - Check Node.js version: `node -v` (need 18+)
 
 **Frontend shows blank page:**
 - Make sure `frontend/dist/` exists: `ls frontend/dist/`
-- If not, rebuild: `cd frontend && npm run build`
+- If not, rebuild: `npm run build`
 
 **API returns 404:**
 - Make sure you're hitting `/api/...` routes
 - Check the backend is running: `curl http://localhost:3000/api/health`
+
+**Environment variables not loading:**
+- The `.env` file must be at `backend/.env` (not the project root)
+- Or set them via the Hostinger panel
 
 **Database issues:**
 - The SQLite file is at `backend/data.sqlite`
