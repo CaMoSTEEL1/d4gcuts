@@ -11,9 +11,19 @@ const crypto = require("crypto");
 let _devSecret = null;
 const getSecret = () => {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+
+  // Keep production resilient: never hard-crash auth flows when env vars are missing.
+  // This mirrors backend/server.js behavior and prevents crash loops on hosts.
   if (process.env.NODE_ENV === "production") {
-    throw new Error("FATAL: JWT_SECRET must be set in production .env");
+    if (!_devSecret) {
+      _devSecret = crypto.randomBytes(48).toString("hex");
+      console.error(
+        "[Auth] PRODUCTION WARNING: JWT_SECRET missing. Using temporary in-memory secret. Existing tokens will be invalid after restart. Set JWT_SECRET in environment variables immediately."
+      );
+    }
+    return _devSecret;
   }
+
   if (!_devSecret) {
     _devSecret = crypto.randomBytes(48).toString("hex");
     console.warn("[Auth] No JWT_SECRET set — using ephemeral dev secret (tokens won't survive restart).");
