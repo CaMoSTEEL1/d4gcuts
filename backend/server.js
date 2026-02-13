@@ -22,13 +22,15 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "dev_secret") {
     "\x1b[33m%s\x1b[0m",
     "WARNING: JWT_SECRET is not set or is using the insecure default. Set a strong secret in .env for production!"
   );
-  if (IS_PRODUCTION) {
-    console.error("FATAL: JWT_SECRET must be set in production. Exiting.");
-    process.exit(1);
-  }
   if (!process.env.JWT_SECRET) {
     process.env.JWT_SECRET = require("crypto").randomBytes(64).toString("hex");
-    console.warn("Auto-generated a temporary JWT_SECRET for this session.");
+    if (IS_PRODUCTION) {
+      console.error(
+        "PRODUCTION WARNING: Auto-generated a temporary JWT_SECRET because none was provided. Sessions/tokens will be invalidated on restart. Set JWT_SECRET in backend/.env or hosting environment variables immediately."
+      );
+    } else {
+      console.warn("Auto-generated a temporary JWT_SECRET for this session.");
+    }
   }
 }
 
