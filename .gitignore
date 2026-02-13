@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+dist/
+
+# Environment variables (NEVER commit these)
+.env
+backend/.env
+
+# Database (SQLite + journal files)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+backend/data.sqlite
+backend/data.sqlite-shm
+backend/data.sqlite-wal
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Playwright
+test-results/
+playwright-report/
+
+# Local dev
+*.local

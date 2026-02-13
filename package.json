@@ -1,0 +1,17 @@
+{
+  "name": "d4gcutz",
+  "version": "1.0.0",
+  "description": "d4gcutz barbershop booking platform",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "install:all": "cd backend && npm install --production && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && node server.js",
+    "dev": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "postinstall": "npm run install:all && npm run build"
+  }
+}
