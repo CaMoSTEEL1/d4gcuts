@@ -15,6 +15,7 @@ const paymentRoutes = require("./src/routes/payments");
 const reviewRoutes = require("./src/routes/reviews");
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const RELEASE_ID = "2026-02-13-resilience-2";
 
 /* ---------- Validate critical env vars ---------- */
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "dev_secret") {
@@ -125,7 +126,7 @@ app.use("/api/reviews", reviewRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
+  res.json({ status: "ok", uptime: process.uptime(), release: RELEASE_ID });
 });
 
 /* ---------- Serve Frontend (production) ---------- */
@@ -182,3 +183,12 @@ const shutdown = (signal) => {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Keep process alive long enough to inspect production errors instead of silent crash loops.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Process] Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[Process] Uncaught exception:", error);
+});
