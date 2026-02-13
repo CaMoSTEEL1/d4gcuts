@@ -14,6 +14,13 @@ const EVENING_SLOTS = [
   ["21:00", "22:00"],
 ];
 
+const formatLocalDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const init = () => {
   // Enable WAL mode for better concurrent read performance
   db.run("PRAGMA journal_mode=WAL");
@@ -155,7 +162,7 @@ const seedAdmin = () => {
  * Seeds weekday (Mon-Fri) availability in 1-hour blocks from 4:00 PM to 10:00 PM.
  * Idempotent: only inserts slots that do not already exist.
  */
-const seedWeekdayEveningAvailability = ({ daysAhead = 90 } = {}) => {
+const seedWeekdayEveningAvailability = ({ daysAhead = 180 } = {}) => {
   const start = new Date();
   const end = new Date();
   end.setDate(start.getDate() + daysAhead);
@@ -179,7 +186,8 @@ const seedWeekdayEveningAvailability = ({ daysAhead = 90 } = {}) => {
       // Weekdays only: Monday (1) through Friday (5)
       if (day < 1 || day > 5) continue;
 
-      const dateText = current.toISOString().slice(0, 10);
+      // Use local calendar date (not UTC) so slots align with frontend date picker.
+      const dateText = formatLocalDate(current);
 
       for (const [startTime, endTime] of EVENING_SLOTS) {
         stmt.run(
