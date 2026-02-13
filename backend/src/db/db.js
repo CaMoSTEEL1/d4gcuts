@@ -110,12 +110,13 @@ const init = () => {
  * so changes in .env are always reflected.
  */
 const seedAdmin = () => {
-  const username = process.env.ADMIN_USERNAME;
-  const password = process.env.ADMIN_PASSWORD;
+  const username = process.env.ADMIN_USERNAME || "admin";
+  const password = process.env.ADMIN_PASSWORD || "d4gcutz";
 
-  if (!username || !password) {
-    console.warn("[Seed] ADMIN_USERNAME and ADMIN_PASSWORD must be set in .env — skipping admin seed.");
-    return;
+  if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+    console.warn(
+      "[Seed] ADMIN_USERNAME/ADMIN_PASSWORD not fully set. Using fallback owner credentials (admin/d4gcutz). Set secure values in environment variables."
+    );
   }
 
   const email = `${username}@d4gcutz.local`;
