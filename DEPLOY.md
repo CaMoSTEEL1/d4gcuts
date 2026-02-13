@@ -35,67 +35,48 @@ git push -u origin main
 - Connect your GitHub repo
 - Set the branch to `main` (or `master`)
 
-### 3. Set the Node.js entry point
+### 3. Configure Build Settings
 
-In Hostinger's Node.js settings:
-- **Application root**: `/` (project root)
-- **Application startup file**: `app.js`
-- **Node.js version**: 18+ (20 recommended)
+When Hostinger asks you to configure build settings (Step 6 in their flow), use:
 
-> **Important**: The startup file is `app.js` in the project root — NOT `backend/server.js`.  
-> `app.js` is a thin wrapper that bootstraps the backend server.
+| Setting | Value |
+|---------|-------|
+| **Framework** | Express.js (auto-detected) |
+| **Node.js version** | 20.x (recommended) |
+| **Build command** | `npm run build` |
+| **Start command** | `npm start` |
 
-### 4. Install dependencies and build
+> Hostinger auto-detects Express.js from the root `package.json` dependencies.  
+> The build command installs frontend deps and builds the React app.  
+> The start command runs `node app.js` which bootstraps the Express server.
 
-SSH into your server and run from the project root:
+### 4. Configure environment variables
 
-```bash
-npm install
-```
+Set these in the Hostinger panel (during deployment or after, under environment variables):
 
-This automatically runs `postinstall` which:
-1. Installs backend dependencies (production only)
-2. Installs frontend dependencies
-3. Builds the frontend into `frontend/dist/`
+- `NODE_ENV` = `production`
+- `JWT_SECRET` — Generate one: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+- `ADMIN_USERNAME` — Your admin username
+- `ADMIN_PASSWORD` — A strong password
+- `OWNER_REGISTRATION_SECRET` — A secret string for owner registration
+- `STRIPE_SECRET` — (optional, for payments)
+- Twilio credentials — (optional, for SMS notifications)
 
-If automatic build fails, run manually:
-
-```bash
-npm install --prefix backend --production
-npm install --prefix frontend
-npm run build --prefix frontend
-```
-
-### 5. Configure environment variables
-
-Copy the production template and fill in your values:
+Alternatively, create a `backend/.env` file on the server:
 
 ```bash
 cp backend/.env.production backend/.env
 nano backend/.env
 ```
 
-**Required changes:**
-- `JWT_SECRET` — Generate one: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
-- `ADMIN_PASSWORD` — Change from default
-- `OWNER_REGISTRATION_SECRET` — Change from default
-- Twilio credentials (if you want SMS notifications)
-- Stripe secret (if you want payments)
+### 5. Deploy
 
-You can also set environment variables via the Hostinger panel under
-**Websites > Manage > Advanced > Node.js > Environment Variables**.
+Click **Deploy** in the Hostinger panel. Hostinger will:
+1. Run `npm install` (installs backend/Express dependencies from root package.json)
+2. Run the build command (installs frontend deps + builds React into `frontend/dist/`)
+3. Start the app with `node app.js`
 
-### 6. Start the app
-
-Hostinger starts the app automatically using the startup file (`app.js`).
-
-To start manually:
-
-```bash
-NODE_ENV=production node app.js
-```
-
-The server will start on the `PORT` specified in `.env` (default: 3000).
+The server will start on the `PORT` provided by Hostinger.
 
 ---
 
@@ -146,16 +127,16 @@ Then on Hostinger:
 ```
 d4gcutz/
 ├── app.js                 ← Hostinger startup file (entry point)
-├── package.json           ← Root scripts (main: "app.js")
+├── package.json           ← Express deps + build/start scripts
+├── node_modules/          ← Backend deps (installed by Hostinger)
 ├── backend/
 │   ├── server.js          ← Express server (loaded by app.js)
 │   ├── .env               ← Your production env (never commit)
 │   ├── data.sqlite        ← Database (auto-created)
-│   ├── src/               ← API routes, middleware, DB
-│   └── node_modules/
+│   └── src/               ← API routes, middleware, DB
 ├── frontend/
 │   ├── dist/              ← Built React app (served by Express)
-│   └── node_modules/      ← Needed for build only
+│   └── node_modules/      ← Frontend deps (installed during build)
 ├── .gitignore
 └── DEPLOY.md              ← This file
 ```
@@ -165,9 +146,10 @@ d4gcutz/
 ## Troubleshooting
 
 **Hostinger says "framework not supported" or "incorrect structure":**
+- Make sure `express` is listed in the root `package.json` dependencies (NOT in backend/package.json only)
 - Make sure `app.js` exists in the project root
-- Set the startup file to `app.js` (not `backend/server.js`)
-- Make sure `package.json` is in the project root with `"main": "app.js"`
+- Make sure `package.json` has `"main": "app.js"` and a `"start"` script
+- Do NOT have a `postinstall` script — it interferes with Hostinger's build pipeline
 
 **App won't start:**
 - Check `JWT_SECRET` is set in `backend/.env`
