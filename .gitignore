@@ -1,8 +1,7 @@
 # Dependencies
 node_modules/
 
-# Build output
-frontend/dist/
+# Build output (frontend/dist is committed for Hostinger deployment)
 dist/
 
 # Environment variables (NEVER commit these)
