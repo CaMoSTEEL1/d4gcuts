@@ -133,8 +133,8 @@ if (IS_PRODUCTION) {
   // Serve static assets from the Vite build
   app.use(express.static(FRONTEND_DIST, { maxAge: "1y", immutable: true }));
 
-  // SPA fallback: any non-API route serves index.html (Express 5 wildcard syntax)
-  app.get("/{*splat}", (req, res) => {
+  // SPA fallback: any non-API route serves index.html
+  app.get("*", (req, res) => {
     if (req.originalUrl.startsWith("/api/")) {
       return res.status(404).json({ message: "API route not found" });
     }
