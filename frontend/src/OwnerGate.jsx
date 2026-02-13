@@ -8,6 +8,22 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 const STORAGE_KEY_TOKEN = "owner_token";
 const STORAGE_KEY_USER = "owner_user";
 
+const clearOwnerSession = () => {
+  localStorage.removeItem(STORAGE_KEY_TOKEN);
+  localStorage.removeItem(STORAGE_KEY_USER);
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+};
+
+const readJsonSafe = async (res) => {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { message: res.status >= 500 ? "Server unavailable. Please try again shortly." : "Unexpected server response." };
+  }
+};
+
 const safeFetch = async (url, options = {}) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -33,23 +49,33 @@ export default function OwnerGate() {
   const [error, setError] = useState("");
 
   // Check if there's already a valid owner session
-  const verifyExistingSession = useCallback(() => {
+  const verifyExistingSession = useCallback(async () => {
     try {
       const token = localStorage.getItem(STORAGE_KEY_TOKEN);
       const userStr = localStorage.getItem(STORAGE_KEY_USER);
       if (token && userStr) {
         const user = JSON.parse(userStr);
         if (user?.role === "OWNER") {
-          // Also set the regular token/user keys so OwnerSchedule can use them
-          localStorage.setItem("token", token);
-          localStorage.setItem("user", userStr);
-          setAuthenticated(true);
+          // Validate token against a protected route to avoid stale-session lockups.
+          const from = new Date().toISOString().slice(0, 10);
+          const res = await safeFetch(
+            `${API_BASE}/availability/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(from)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          if (res.ok) {
+            // Also set regular token/user keys so OwnerSchedule can use them
+            localStorage.setItem("token", token);
+            localStorage.setItem("user", userStr);
+            setAuthenticated(true);
+          } else {
+            clearOwnerSession();
+          }
         }
       }
     } catch {
       // Corrupt data, clear it
-      localStorage.removeItem(STORAGE_KEY_TOKEN);
-      localStorage.removeItem(STORAGE_KEY_USER);
+      clearOwnerSession();
     } finally {
       setLoading(false);
     }
@@ -77,7 +103,7 @@ export default function OwnerGate() {
         body: JSON.stringify({ username: username.trim(), password }),
       });
 
-      const data = await res.json();
+      const data = await readJsonSafe(res);
 
       if (!res.ok) {
         setError(data.message || "Login failed.");
@@ -105,10 +131,7 @@ export default function OwnerGate() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem(STORAGE_KEY_TOKEN);
-    localStorage.removeItem(STORAGE_KEY_USER);
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    clearOwnerSession();
     setAuthenticated(false);
     setUsername("");
     setPassword("");
