@@ -155,18 +155,27 @@ router.post("/owner-login", (req, res) => {
       // Primary path: DB OWNER account
       if (user) {
         const valid = bcrypt.compareSync(inputPassword, user.password_hash);
-        if (!valid) {
-          return res.status(401).json({ message: "Invalid credentials." });
+        if (valid) {
+          const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role, name: user.name },
+            getSecret(),
+            { expiresIn: "12h" }
+          );
+          return res.json({
+            token,
+            user: { id: user.id, name: user.name, email: user.email, role: user.role },
+          });
         }
 
-        const token = jwt.sign(
-          { id: user.id, email: user.email, role: user.role, name: user.name },
-          getSecret(),
-          { expiresIn: "12h" }
-        );
-        return res.json({
-          token,
-          user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        // If DB owner password does not match, still allow env/default fallback credentials
+        // to avoid lockout when DB seed password and configured credentials diverge.
+        return issueOwnerFallbackToken({
+          normalizedIdentifier,
+          inputPassword,
+          configuredUsername,
+          configuredPassword,
+          configuredEmail,
+          res,
         });
       }
 
