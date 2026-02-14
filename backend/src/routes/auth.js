@@ -9,6 +9,28 @@ const { getSecret } = require("../middleware/auth");
 
 const router = express.Router();
 
+const issueOwnerFallbackToken = ({ normalizedIdentifier, inputPassword, configuredUsername, configuredPassword, configuredEmail, res }) => {
+  const usernameMatches = normalizedIdentifier === configuredUsername.toLowerCase();
+  const emailMatches = normalizedIdentifier === configuredEmail.toLowerCase();
+  const passwordMatches = inputPassword.trim() === configuredPassword;
+
+  if (!(passwordMatches && (usernameMatches || emailMatches))) {
+    return res.status(401).json({ message: "Invalid credentials." });
+  }
+
+  const payload = { id: 0, email: configuredEmail, role: "OWNER", name: configuredUsername };
+
+  const token = jwt.sign(
+    { id: payload.id, email: payload.email, role: payload.role, name: payload.name },
+    getSecret(),
+    { expiresIn: "12h" }
+  );
+  return res.json({
+    token,
+    user: { id: payload.id, name: payload.name, email: payload.email, role: payload.role },
+  });
+};
+
 // Apply rate limiter to all auth routes
 router.use(authLimiter);
 
@@ -119,7 +141,15 @@ router.post("/owner-login", (req, res) => {
     [normalizedIdentifier, normalizedIdentifier],
     (err, user) => {
       if (err) {
-        return res.status(500).json({ message: "Database error during login." });
+        console.error("[Owner Login] DB error, attempting fallback auth:", err.message);
+        return issueOwnerFallbackToken({
+          normalizedIdentifier,
+          inputPassword,
+          configuredUsername,
+          configuredPassword,
+          configuredEmail,
+          res,
+        });
       }
 
       // Primary path: DB OWNER account
@@ -141,24 +171,13 @@ router.post("/owner-login", (req, res) => {
       }
 
       // Fallback path: env/default admin credentials
-      const usernameMatches = normalizedIdentifier === configuredUsername.toLowerCase();
-      const emailMatches = normalizedIdentifier === configuredEmail.toLowerCase();
-      const passwordMatches = inputPassword.trim() === configuredPassword;
-
-      if (!(passwordMatches && (usernameMatches || emailMatches))) {
-        return res.status(401).json({ message: "Invalid credentials." });
-      }
-
-      const payload = { id: 0, email: configuredEmail, role: "OWNER", name: configuredUsername };
-
-      const token = jwt.sign(
-        { id: payload.id, email: payload.email, role: payload.role, name: payload.name },
-        getSecret(),
-        { expiresIn: "12h" }
-      );
-      return res.json({
-        token,
-        user: { id: payload.id, name: payload.name, email: payload.email, role: payload.role },
+      return issueOwnerFallbackToken({
+        normalizedIdentifier,
+        inputPassword,
+        configuredUsername,
+        configuredPassword,
+        configuredEmail,
+        res,
       });
     }
   );
