@@ -89,8 +89,10 @@ router.post("/login", (req, res) => {
 
 /**
  * Owner-only login endpoint.
- * Accepts { username, password } — looks up by name where role = 'OWNER'.
- * Returns a JWT only if the account exists, password matches, and role is OWNER.
+ * Accepts { username, password } where username can be OWNER name or OWNER email.
+ * Primary auth path: OWNER account from DB (bcrypt hash compare).
+ * Fallback auth path: configured admin env credentials (or default fallback)
+ * to avoid lockouts while seed/admin sync catches up.
  */
 router.post("/owner-login", (req, res) => {
   const { username, password } = req.body;
@@ -100,26 +102,63 @@ router.post("/owner-login", (req, res) => {
   }
 
   const cleanUsername = sanitizeString(username);
+  const normalizedIdentifier = String(cleanUsername || "").trim().toLowerCase();
+  const inputPassword = String(password);
+
+  // Keep this in sync with DB seed fallback so owner login remains functional.
+  const configuredUsername = String(process.env.ADMIN_USERNAME || "admin").trim();
+  const configuredPassword = String(process.env.ADMIN_PASSWORD || "d4gcutz").trim();
+  const configuredEmail = `${configuredUsername}@d4gcutz.local`;
 
   db.get(
-    `SELECT * FROM users WHERE name = ? AND role = 'OWNER'`,
-    [cleanUsername],
+    `SELECT *
+      FROM users
+      WHERE role = 'OWNER'
+        AND (LOWER(name) = LOWER(?) OR LOWER(email) = LOWER(?))
+      LIMIT 1`,
+    [normalizedIdentifier, normalizedIdentifier],
     (err, user) => {
-      if (err || !user) {
+      if (err) {
+        return res.status(500).json({ message: "Database error during login." });
+      }
+
+      // Primary path: DB OWNER account
+      if (user) {
+        const valid = bcrypt.compareSync(inputPassword, user.password_hash);
+        if (!valid) {
+          return res.status(401).json({ message: "Invalid credentials." });
+        }
+
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, name: user.name },
+          getSecret(),
+          { expiresIn: "12h" }
+        );
+        return res.json({
+          token,
+          user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        });
+      }
+
+      // Fallback path: env/default admin credentials
+      const usernameMatches = normalizedIdentifier === configuredUsername.toLowerCase();
+      const emailMatches = normalizedIdentifier === configuredEmail.toLowerCase();
+      const passwordMatches = inputPassword.trim() === configuredPassword;
+
+      if (!(passwordMatches && (usernameMatches || emailMatches))) {
         return res.status(401).json({ message: "Invalid credentials." });
       }
-      const valid = bcrypt.compareSync(password, user.password_hash);
-      if (!valid) {
-        return res.status(401).json({ message: "Invalid credentials." });
-      }
+
+      const payload = { id: 0, email: configuredEmail, role: "OWNER", name: configuredUsername };
+
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, name: user.name },
+        { id: payload.id, email: payload.email, role: payload.role, name: payload.name },
         getSecret(),
-        { expiresIn: "12h" } // shorter session for owner portal
+        { expiresIn: "12h" }
       );
       return res.json({
         token,
-        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        user: { id: payload.id, name: payload.name, email: payload.email, role: payload.role },
       });
     }
   );
