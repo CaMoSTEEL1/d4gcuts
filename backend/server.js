@@ -139,25 +139,30 @@ if (IS_PRODUCTION) {
 
   const INDEX_HTML = path.join(FRONTEND_DIST, "index.html");
 
-  // SPA fallback: any non-API route serves index.html (e.g. /owner, /, /anything)
-  app.get("*", (req, res) => {
-    if (req.originalUrl.startsWith("/api/")) {
-      return res.status(404).json({ message: "API route not found" });
-    }
+  const sendIndex = (res) => {
     res.sendFile(INDEX_HTML, (err) => {
       if (err) {
-        console.error("[SPA fallback] Failed to send index.html:", err.message);
+        console.error("[SPA] Failed to send index.html:", err.message);
         if (err.code === "ENOENT") {
           return res.status(503).json({
             message: "Frontend not available. Ensure frontend/dist is built and deployed.",
             code: "FRONTEND_MISSING",
           });
         }
-        if (!res.headersSent) {
-          res.status(500).json({ message: "Error serving page" });
-        }
+        if (!res.headersSent) res.status(500).json({ message: "Error serving page" });
       }
     });
+  };
+
+  // Explicit server route for /owner — normal (non–client-side) routing; shows owner login
+  app.get("/owner", (_req, res) => sendIndex(res));
+
+  // SPA fallback: any other non-API route serves index.html
+  app.get("*", (req, res) => {
+    if (req.originalUrl.startsWith("/api/")) {
+      return res.status(404).json({ message: "API route not found" });
+    }
+    sendIndex(res);
   });
 } else {
   // Development root
