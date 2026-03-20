@@ -1,6 +1,5 @@
 const express = require("express");
 const https = require("https");
-const querystring = require("querystring");
 const { db } = require("../db/db");
 const bcrypt = require("bcryptjs");
 const { requireAuth, requireOwner, optionalAuth } = require("../middleware/auth");
@@ -9,7 +8,6 @@ const { sanitizeBody, sanitizeString, isValidEmail } = require("../middleware/va
 
 const router = express.Router();
 
-// Sanitize all string fields
 router.use(sanitizeBody);
 
 const VALID_SERVICES = ["Full Cut", "Lineup", "Mobile"];
@@ -23,58 +21,49 @@ const formatTimeEST = (time24) => {
   return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 };
 
-const sendOwnerBookingSms = ({ booking, customerName, customerEmail }) => {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
-  const to = process.env.OWNER_PHONE_NUMBER;
+/**
+ * Notify the owner via ntfy.sh push notification.
+ * Owner installs the ntfy app (iOS/Android), subscribes to the topic set in NTFY_TOPIC.
+ * https://ntfy.sh — completely free, no account required.
+ */
+const notifyOwner = ({ booking, customerName, customerEmail, customerPhone }) => {
+  const topic = process.env.NTFY_TOPIC;
+  if (!topic) return Promise.resolve(); // silently skip if not configured
 
-  if (!sid || !token || !from || !to) {
-    return Promise.resolve();
-  }
+  const lines = [
+    `✂️  ${booking.service}`,
+    `📅  ${booking.date}  •  ${formatTimeEST(booking.start_time)}–${formatTimeEST(booking.end_time)} EST`,
+    `👤  ${customerName}`,
+    `📧  ${customerEmail}`,
+    customerPhone ? `📱  ${customerPhone}` : null,
+    booking.address ? `📍  ${booking.address}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-  const bodyText = [
-    "New d4gcutz booking",
-    `Name: ${customerName}`,
-    `Email: ${customerEmail}`,
-    `Service: ${booking.service}`,
-    `Date: ${booking.date}`,
-    `Time (EST): ${formatTimeEST(booking.start_time)} - ${formatTimeEST(booking.end_time)}`,
-  ].join("\n");
-
-  const postData = querystring.stringify({
-    To: to,
-    From: from,
-    Body: bodyText,
-  });
-
+  const postData = lines;
   const options = {
-    hostname: "api.twilio.com",
-    path: `/2010-04-01/Accounts/${sid}/Messages.json`,
+    hostname: "ntfy.sh",
+    path: `/${encodeURIComponent(topic)}`,
     method: "POST",
-    auth: `${sid}:${token}`,
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "text/plain",
+      "Title": "New d4gcutz Booking",
+      "Priority": "high",
+      "Tags": "scissors,calendar",
       "Content-Length": Buffer.byteLength(postData),
     },
   };
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => {
-        data += chunk;
-      });
-      res.on("end", () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve();
-        } else {
-          reject(new Error(`Twilio SMS failed (${res.statusCode}): ${data}`));
-        }
-      });
+      res.resume();
+      resolve();
     });
-
-    req.on("error", reject);
+    req.on("error", (err) => {
+      console.error("[ntfy] Notification failed:", err.message);
+      resolve(); // never block booking on notification failure
+    });
     req.write(postData);
     req.end();
   });
@@ -85,9 +74,7 @@ router.get("/me", requireAuth, (req, res) => {
     `SELECT * FROM bookings WHERE user_id = ? ORDER BY date DESC, start_time DESC`,
     [req.user.id],
     (err, rows) => {
-      if (err) {
-        return res.status(500).json({ message: "Failed to fetch bookings" });
-      }
+      if (err) return res.status(500).json({ message: "Failed to fetch bookings" });
       return res.json(rows);
     }
   );
@@ -95,54 +82,60 @@ router.get("/me", requireAuth, (req, res) => {
 
 router.get("/all", requireAuth, requireOwner, (req, res) => {
   db.all(
-    `SELECT bookings.*, users.name AS user_name FROM bookings JOIN users ON bookings.user_id = users.id ORDER BY date DESC`,
+    `SELECT bookings.*, users.name AS user_name
+     FROM bookings
+     JOIN users ON bookings.user_id = users.id
+     ORDER BY date DESC`,
     [],
     (err, rows) => {
-      if (err) {
-        return res.status(500).json({ message: "Failed to fetch bookings" });
-      }
+      if (err) return res.status(500).json({ message: "Failed to fetch bookings" });
       return res.json(rows);
     }
   );
 });
 
 router.post("/", bookingLimiter, optionalAuth, (req, res) => {
-  const { availability_id, service, customer_name, customer_email, address } = req.body;
+  const {
+    availability_id,
+    service,
+    customer_name,
+    customer_email,
+    customer_phone,
+    address,
+  } = req.body;
+
   if (!availability_id || !service || !customer_name || !customer_email) {
-    return res.status(400).json({ message: "Missing booking data." });
+    return res.status(400).json({ message: "Missing required booking fields." });
   }
 
-  // Validate service name against whitelist
   if (!VALID_SERVICES.includes(service)) {
     return res.status(400).json({ message: "Invalid service selected." });
   }
 
   const email = String(customer_email).trim().toLowerCase();
   const name = sanitizeString(customer_name);
+  const phone = customer_phone ? sanitizeString(String(customer_phone)) : "";
   const cleanAddress = address ? sanitizeString(address) : "";
 
   if (!name || name.length < 2 || name.length > 100) {
-    return res.status(400).json({ message: "Name must be between 2 and 100 characters." });
+    return res.status(400).json({ message: "Name must be 2–100 characters." });
   }
 
   if (!isValidEmail(email)) {
-    return res.status(400).json({ message: "Invalid email format." });
+    return res.status(400).json({ message: "Invalid email address." });
   }
 
   if (service === "Mobile" && !cleanAddress) {
-    return res.status(400).json({ message: "Service address is required for mobile bookings." });
+    return res.status(400).json({ message: "A service address is required for mobile bookings." });
   }
 
-  // Validate availability_id is a positive integer
   const slotId = Number(availability_id);
   if (!Number.isInteger(slotId) || slotId < 1) {
     return res.status(400).json({ message: "Invalid slot ID." });
   }
 
   const resolveUserId = (callback) => {
-    if (req.user?.id) {
-      return callback(null, req.user.id);
-    }
+    if (req.user?.id) return callback(null, req.user.id);
 
     db.get(`SELECT id FROM users WHERE email = ?`, [email], (findErr, userRow) => {
       if (findErr) return callback(findErr);
@@ -164,7 +157,7 @@ router.post("/", bookingLimiter, optionalAuth, (req, res) => {
 
   db.get(`SELECT * FROM availability WHERE id = ? AND is_open = 1`, [slotId], (err, slot) => {
     if (err || !slot) {
-      return res.status(400).json({ message: "Slot unavailable." });
+      return res.status(400).json({ message: "That slot is no longer available." });
     }
 
     resolveUserId((userErr, userId) => {
@@ -172,34 +165,44 @@ router.post("/", bookingLimiter, optionalAuth, (req, res) => {
         return res.status(500).json({ message: "Failed to resolve customer profile." });
       }
 
-      const insert = `INSERT INTO bookings (user_id, service, date, start_time, end_time, status)
-                      VALUES (?, ?, ?, ?, ?, 'BOOKED')`;
-      db.run(insert, [userId, service, slot.date, slot.start_time, slot.end_time], function (insertErr) {
-        if (insertErr) {
-          return res.status(500).json({ message: "Failed to create booking." });
+      db.run(
+        `INSERT INTO bookings
+           (user_id, service, date, start_time, end_time, status, address, customer_phone)
+         VALUES (?, ?, ?, ?, ?, 'BOOKED', ?, ?)`,
+        [userId, service, slot.date, slot.start_time, slot.end_time, cleanAddress, phone],
+        function (insertErr) {
+          if (insertErr) {
+            return res.status(500).json({ message: "Failed to create booking." });
+          }
+
+          // Immediately close the slot so no double-bookings
+          db.run(`UPDATE availability SET is_open = 0 WHERE id = ?`, [slotId]);
+
+          const bookingPayload = {
+            id: this.lastID,
+            date: slot.date,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            service,
+            customer_name: name,
+            customer_email: email,
+            customer_phone: phone,
+            address: cleanAddress,
+          };
+
+          // Notify owner (fire-and-forget — never blocks the response)
+          notifyOwner({
+            booking: bookingPayload,
+            customerName: name,
+            customerEmail: email,
+            customerPhone: phone,
+          }).catch((notifyErr) => {
+            console.error("[ntfy] Unexpected error:", notifyErr.message);
+          });
+
+          return res.json(bookingPayload);
         }
-        db.run(`UPDATE availability SET is_open = 0 WHERE id = ?`, [slotId]);
-
-        const bookingPayload = {
-          id: this.lastID,
-          date: slot.date,
-          start_time: slot.start_time,
-          end_time: slot.end_time,
-          service,
-          customer_name: name,
-          customer_email: email,
-        };
-
-        sendOwnerBookingSms({
-          booking: bookingPayload,
-          customerName: name,
-          customerEmail: email,
-        }).catch((smsErr) => {
-          console.error("Failed to send owner booking SMS:", smsErr.message);
-        });
-
-        return res.json(bookingPayload);
-      });
+      );
     });
   });
 });

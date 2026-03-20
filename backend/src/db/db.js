@@ -97,6 +97,18 @@ const init = () => {
     db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_reviews_user ON reviews(user_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews(created_at)`);
+
+    /* ---------- Column migrations (idempotent) ---------- */
+    db.run(`ALTER TABLE bookings ADD COLUMN address TEXT DEFAULT ''`, (err) => {
+      if (err && !err.message.includes("duplicate column name")) {
+        console.error("[DB] Migration error (bookings.address):", err.message);
+      }
+    });
+    db.run(`ALTER TABLE bookings ADD COLUMN customer_phone TEXT DEFAULT ''`, (err) => {
+      if (err && !err.message.includes("duplicate column name")) {
+        console.error("[DB] Migration error (bookings.customer_phone):", err.message);
+      }
+    });
   });
 };
 
