@@ -1,18 +1,26 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import "./App.css";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const FETCH_TIMEOUT = 15_000;
 
 const services = [
-  { name: "Full Cut", price: 30 },
-  { name: "Lineup", price: 15 },
-  { name: "Mobile", price: 50 },
+  {
+    name: "Full Cut",
+    price: 30,
+    desc: "Scissor or clipper work, clean fade, and a finished edge-up. Every detail locked in before you leave the chair.",
+  },
+  {
+    name: "Lineup",
+    price: 15,
+    desc: "Sharp hairline, defined edges, and a fresh beard line. The 15-minute reset that changes the whole look.",
+  },
+  {
+    name: "Mobile",
+    price: 50,
+    desc: "Russ comes to you. Same premium cut at your location. Available within a 10-mile radius — just drop the address when you book.",
+  },
 ];
-
-const heroImages = ["/background.jpg"];
 
 const galleryImages = [
   "/display-cuts/IMG_8740.jpg",
@@ -31,12 +39,6 @@ const galleryImages = [
   "/display-cuts/IMG_8804.jpg",
 ];
 
-const barberProfile = {
-  name: "Barber Name",
-  specialty: "Signature fades \u00b7 Detail work \u00b7 Grooming",
-  image: "",
-};
-
 const formatTimeEST = (time24) => {
   const [h = "0", m = "0"] = String(time24 || "00:00").split(":");
   const hour = Number(h);
@@ -47,27 +49,69 @@ const formatTimeEST = (time24) => {
 };
 
 const formatSlot = (slot) =>
-  `${slot.date} \u00b7 ${formatTimeEST(slot.start_time)}\u2013${formatTimeEST(slot.end_time)}`;
+  `${slot.date} · ${formatTimeEST(slot.start_time)}–${formatTimeEST(slot.end_time)}`;
 
 const safeFetch = async (url, options = {}) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeout);
     return res;
   } catch (err) {
     clearTimeout(timeout);
-    if (err.name === "AbortError") {
-      throw new Error("Request timed out. Please try again.");
-    }
+    if (err.name === "AbortError") throw new Error("Request timed out. Please try again.");
     throw err;
   }
 };
 
-function App() {
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [token] = useState(localStorage.getItem("token") || "");
+// Encode status as "ok:..." or "err:..."
+const ok = (msg) => `ok:${msg}`;
+const err = (msg) => `err:${msg}`;
+const statusClass = (s) => {
+  if (!s) return "";
+  if (s.startsWith("ok:")) return "status-ok";
+  if (s.startsWith("err:")) return "status-err";
+  return "status-info";
+};
+const statusText = (s) => (s ? s.replace(/^(ok:|err:)/, "") : "");
+
+// Scroll-reveal via IntersectionObserver
+function useReveal() {
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("visible");
+          }
+        });
+      },
+      { threshold: 0.07, rootMargin: "0px 0px -48px 0px" }
+    );
+    const els = document.querySelectorAll(".reveal, .reveal-left, .stagger");
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+}
+
+// Accessible star rating display
+function StarRating({ rating }) {
+  return (
+    <span className="review-stars" aria-label={`${rating} out of 5 stars`}>
+      {Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className="review-star" aria-hidden="true">
+          {i < rating ? "★" : "☆"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+export default function App() {
+  useReveal();
+
+  const [token] = useState(() => localStorage.getItem("token") || "");
   const [user] = useState(() => {
     try {
       const stored = localStorage.getItem("user");
@@ -76,6 +120,11 @@ function App() {
       return null;
     }
   });
+
+  // Nav
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Booking
   const [availability, setAvailability] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedService, setSelectedService] = useState(services[0]);
@@ -85,19 +134,16 @@ function App() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [customerForm, setCustomerForm] = useState({ name: "", email: "" });
   const [mobileAddress, setMobileAddress] = useState("");
+
+  // Reviews
   const [reviews, setReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" });
-  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [reviewStatus, setReviewStatus] = useState("");
+
+  // Gallery lightbox
   const [lightboxImage, setLightboxImage] = useState("");
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setHeroIndex((prev) => (prev + 1) % heroImages.length);
-    }, 8000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const heroImage = useMemo(() => heroImages[heroIndex], [heroIndex]);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const closeBtnRef = useRef(null);
 
   const authHeaders = useMemo(
     () => ({
@@ -115,8 +161,8 @@ function App() {
       if (!res.ok) throw new Error("Failed to load slots");
       const data = await res.json();
       setAvailability(data);
-    } catch (err) {
-      console.error("Failed to fetch availability:", err.message);
+    } catch (e) {
+      console.error("Failed to fetch availability:", e.message);
       setAvailability([]);
     } finally {
       setLoadingSlots(false);
@@ -129,8 +175,8 @@ function App() {
       if (!res.ok) throw new Error("Failed to load reviews");
       const data = await res.json();
       setReviews(data);
-    } catch (err) {
-      console.error("Failed to fetch reviews:", err.message);
+    } catch (e) {
+      console.error("Failed to fetch reviews:", e.message);
     }
   }, []);
 
@@ -140,28 +186,60 @@ function App() {
   }, [fetchAvailability, fetchReviews]);
 
   useEffect(() => {
-    if (reviews.length === 0) return;
-    const timer = setInterval(() => {
-      setCarouselIndex((prev) => (prev + 1) % reviews.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [reviews.length]);
-
-  useEffect(() => {
     if (selectedDate) fetchAvailability(selectedDate);
   }, [selectedDate, fetchAvailability]);
 
+  // Focus close button when lightbox opens
+  useEffect(() => {
+    if (lightboxImage) {
+      closeBtnRef.current?.focus();
+    }
+  }, [lightboxImage]);
+
+  // Escape closes lightbox
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const handleKey = (e) => {
+      if (e.key === "Escape") closeLightbox();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [lightboxImage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lock body scroll when mobile nav or lightbox is open
+  useEffect(() => {
+    document.body.style.overflow = navOpen || lightboxImage ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [navOpen, lightboxImage]);
+
+  const openLightbox = (img, idx) => {
+    setLightboxImage(img);
+    setLightboxIndex(idx);
+  };
+
+  const closeLightbox = () => {
+    setLightboxImage("");
+    setLightboxIndex(null);
+  };
+
+  const scrollTo = (id) => {
+    setNavOpen(false);
+    setTimeout(() => {
+      document.querySelector(id)?.scrollIntoView({ behavior: "smooth" });
+    }, navOpen ? 350 : 0);
+  };
+
   const handleBooking = async () => {
     if (!customerForm.name.trim() || !customerForm.email.trim()) {
-      setBookingStatus("Please enter your name and email to book.");
+      setBookingStatus(err("Please enter your name and email."));
       return;
     }
     if (!selectedSlot) {
-      setBookingStatus("Select a slot.");
+      setBookingStatus(err("Select an available time slot."));
       return;
     }
     if (selectedService.name === "Mobile" && !mobileAddress.trim()) {
-      setBookingStatus("Add a service address for mobile bookings.");
+      setBookingStatus(err("Add a service address for mobile bookings."));
       return;
     }
 
@@ -181,16 +259,16 @@ function App() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBookingStatus(data.message || "Booking failed.");
+        setBookingStatus(err(data.message || "Booking failed."));
         return;
       }
-      setBookingStatus("Booked! You'll receive a confirmation shortly.");
+      setBookingStatus(ok("Booked! Confirmation coming your way shortly."));
       setSelectedSlot(null);
       setCustomerForm({ name: "", email: "" });
       setMobileAddress("");
       fetchAvailability(selectedDate);
-    } catch (err) {
-      setBookingStatus(err.message || "Something went wrong. Please try again.");
+    } catch (e) {
+      setBookingStatus(err(e.message || "Something went wrong. Please try again."));
     } finally {
       setBookingLoading(false);
     }
@@ -198,14 +276,13 @@ function App() {
 
   const handleReviewSubmit = async () => {
     if (!token) {
-      setBookingStatus("Login to leave a review.");
+      setReviewStatus(err("Log in to leave a review."));
       return;
     }
     if (!reviewForm.comment.trim()) {
-      setBookingStatus("Add a quick review note before submitting.");
+      setReviewStatus(err("Add a note before submitting."));
       return;
     }
-
     try {
       const res = await safeFetch(`${API_BASE}/reviews`, {
         method: "POST",
@@ -214,236 +291,536 @@ function App() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBookingStatus(data.message || "Review failed.");
+        setReviewStatus(err(data.message || "Review failed."));
         return;
       }
       setReviewForm({ rating: 5, comment: "" });
-      setBookingStatus("Review submitted. Thanks!");
+      setReviewStatus(ok("Review submitted. Thank you!"));
       fetchReviews();
-    } catch (err) {
-      setBookingStatus(err.message || "Failed to submit review.");
+    } catch (e) {
+      setReviewStatus(err(e.message || "Failed to submit review."));
     }
   };
 
   return (
     <div className="page">
-      <header className="hero" style={{ backgroundImage: `url(${heroImage})` }}>
-        <div className="hero-overlay" />
-        <nav className="nav">
-          <span className="logo">
-            <img src="/IMG_7755.png" alt="d4gcutz logo" width="34" height="34" />
+      {/* Skip to main content */}
+      <a href="#main-content" className="skip-link">Skip to content</a>
+
+      {/* ══════════════════════════
+          HERO
+      ══════════════════════════ */}
+      <header className="hero" style={{ backgroundImage: "url(/background.jpg)" }}>
+        <div className="hero-overlay" aria-hidden="true" />
+
+        {/* ── Nav ── */}
+        <nav className="nav" aria-label="Main navigation">
+          <a href="/" className="nav-logo">
+            <img src="/IMG_7755.png" alt="" width="30" height="30" aria-hidden="true" />
             d4gcutz
-          </span>
-          <div className="nav-links">
-            <a href="#services">Services</a>
-            <a href="#book">Book</a>
-            <a href="#barber">Meet the barber</a>
-            <a href="#gallery">Gallery</a>
-            <a href="#reviews">Reviews</a>
-            {user && <a href="#profile">Profile</a>}
-          </div>
-          <button className="nav-cta" onClick={() => document.querySelector("#book").scrollIntoView({ behavior: "smooth" })}>
+          </a>
+
+          <ul className="nav-links">
+            {[
+              ["#services", "Services"],
+              ["#book", "Book"],
+              ["#barber", "Russ"],
+              ["#gallery", "Gallery"],
+              ["#reviews", "Reviews"],
+            ].map(([href, label]) => (
+              <li key={href}>
+                <a
+                  href={href}
+                  onClick={(e) => { e.preventDefault(); scrollTo(href); }}
+                >
+                  {label}
+                </a>
+              </li>
+            ))}
+          </ul>
+
+          <button className="nav-cta" onClick={() => scrollTo("#book")}>
             Book Now
+          </button>
+
+          <button
+            className={`nav-hamburger${navOpen ? " open" : ""}`}
+            onClick={() => setNavOpen((p) => !p)}
+            aria-expanded={navOpen}
+            aria-controls="mobile-nav"
+            aria-label={navOpen ? "Close navigation menu" : "Open navigation menu"}
+          >
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
           </button>
         </nav>
 
-        <div className="hero-content">
-          <Badge className="hero-badge">Best Cutz in the &apos;ville &middot; Book with Russ</Badge>
+        {/* Mobile drawer */}
+        <div
+          id="mobile-nav"
+          className={`nav-drawer${navOpen ? " open" : ""}`}
+          aria-hidden={!navOpen}
+        >
+          {[
+            ["#services", "Services"],
+            ["#book", "Book"],
+            ["#barber", "Russ"],
+            ["#gallery", "Gallery"],
+            ["#reviews", "Reviews"],
+          ].map(([href, label]) => (
+            <a
+              key={href}
+              href={href}
+              tabIndex={navOpen ? 0 : -1}
+              onClick={(e) => { e.preventDefault(); scrollTo(href); }}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+
+        {/* ── Hero content ── */}
+        <div className="hero-content" id="main-content">
+          <p className="hero-eyebrow">Best Cutz in the &apos;ville &middot; Book with Russ</p>
           <h1 className="hero-title">
-            Refresh that
-            <span className="headline-accent">Inner</span>
-            <span className="headline-emphasis">DAWG</span>
+            <span className="block">Refresh</span>
+            <span className="block">That <span className="accent">Inner</span></span>
+            <span className="block">DAWG</span>
           </h1>
           <div className="hero-actions">
-            <Button className="primary" onClick={() => document.querySelector("#book").scrollIntoView({ behavior: "smooth" })}>
+            <button className="btn-primary" onClick={() => scrollTo("#book")}>
               Book a Session
-            </Button>
-            <Button variant="ghost" className="ghost" onClick={() => document.querySelector("#barber").scrollIntoView({ behavior: "smooth" })}>
-              Meet the barber
-            </Button>
+            </button>
+            <button className="btn-ghost" onClick={() => scrollTo("#barber")}>
+              Meet Russ
+            </button>
           </div>
         </div>
+
+        <p className="hero-scroll-hint" aria-hidden="true">
+          <span />
+          Scroll
+        </p>
       </header>
 
-      <section className="section services" id="services">
-        <div className="section-title">
-          <h2>Precision Services</h2>
-          <p></p>
+      {/* ══════════════════════════
+          SERVICES
+      ══════════════════════════ */}
+      <section className="section services" id="services" aria-labelledby="services-title">
+        <div className="section-header reveal">
+          <span className="section-label">What We Offer</span>
+          <h2 className="section-title" id="services-title">Precision Services</h2>
         </div>
-        <div className="service-grid">
-          {services.map((service) => (
-            <div key={service.name} className="service-card">
-              <h3>{service.name}</h3>
-              <p>Clean lines, tailored texture, and intentional finish.</p>
-              <span>${service.price}</span>
+
+        <div className="service-list stagger">
+          {services.map((service, i) => (
+            <div key={service.name} className="service-item">
+              <span className="service-num" aria-hidden="true">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div className="service-body">
+                <h3>{service.name}</h3>
+                <p>{service.desc}</p>
+              </div>
+              <span className="service-price" aria-label={`$${service.price}`}>
+                ${service.price}
+              </span>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="section booking" id="book">
-        <div className="booking-panel">
-          <div className="booking-header">
-            <h2>Book Your Session</h2>
-            <p>Pick a service and lock in an open slot.</p>
-          </div>
-          <div className="booking-body">
-            <div className="calendar-row">
-              <label htmlFor="booking-date">Select date</label>
-              <input id="booking-date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+      {/* ══════════════════════════
+          BOOKING
+      ══════════════════════════ */}
+      <section className="section booking" id="book" aria-labelledby="book-title">
+        <div className="booking-inner">
+
+          {/* Main panel */}
+          <div className="booking-panel">
+            <div className="section-header reveal">
+              <span className="section-label">Schedule</span>
+              <h2 className="section-title" id="book-title">Book Your Session</h2>
+              <p className="section-desc">
+                Pick a service, find an open slot, and lock it in.
+              </p>
             </div>
-            <div className="booking-services">
-              {services.map((service) => (
-                <button key={service.name} className={selectedService.name === service.name ? "chip active" : "chip"} onClick={() => setSelectedService(service)}>
-                  {service.name}
-                </button>
-              ))}
-            </div>
-            <div className="owner-slot" style={{ marginBottom: "1rem" }}>
-              <Input type="text" placeholder="Your name" value={customerForm.name} onChange={(event) => setCustomerForm((prev) => ({ ...prev, name: event.target.value }))} />
-              <Input type="email" placeholder="Your email" value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} />
-            </div>
-            {selectedService.name === "Mobile" && (
-              <div className="calendar-row">
-                <label htmlFor="mobile-address">Service address</label>
-                <input id="mobile-address" type="text" placeholder="Enter the mobile service address" value={mobileAddress} onChange={(event) => setMobileAddress(event.target.value)} />
+
+            <div className="booking-steps">
+
+              {/* Step 1 — Service */}
+              <div className="booking-step reveal">
+                <div className="step-num" aria-hidden="true">1</div>
+                <div className="step-body">
+                  <p className="step-label">Choose a service</p>
+                  <div
+                    className="chip-row"
+                    role="group"
+                    aria-label="Select a service"
+                  >
+                    {services.map((service) => (
+                      <button
+                        key={service.name}
+                        className={`chip${selectedService.name === service.name ? " active" : ""}`}
+                        onClick={() => { setSelectedService(service); setSelectedSlot(null); }}
+                        aria-pressed={selectedService.name === service.name}
+                      >
+                        {service.name} — ${service.price}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            )}
-            <div className="slot-grid">
-              {loadingSlots && <p className="muted">Loading available slots...</p>}
-              {!loadingSlots && availability.length === 0 && <p className="muted">No slots available. Try selecting a different date.</p>}
-              {availability.map((slot) => (
-                <button key={slot.id} className={selectedSlot?.id === slot.id ? "slot active" : "slot"} onClick={() => setSelectedSlot(slot)}>
-                  {formatSlot(slot)}
-                </button>
-              ))}
+
+              {/* Step 2 — Date & Slot */}
+              <div className="booking-step reveal">
+                <div className="step-num" aria-hidden="true">2</div>
+                <div className="step-body">
+                  <p className="step-label">Pick a date &amp; slot</p>
+                  <div className="field">
+                    <label htmlFor="booking-date">Date</label>
+                    <input
+                      id="booking-date"
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                    />
+                  </div>
+                  <div
+                    className="slot-grid"
+                    role="group"
+                    aria-label="Available time slots"
+                  >
+                    {loadingSlots && (
+                      <p className="muted" style={{ fontSize: "0.875rem" }}>Loading slots…</p>
+                    )}
+                    {!loadingSlots && availability.length === 0 && (
+                      <p className="muted" style={{ fontSize: "0.875rem" }}>
+                        No slots available. Try a different date.
+                      </p>
+                    )}
+                    {availability.map((slot) => (
+                      <button
+                        key={slot.id}
+                        className={`slot${selectedSlot?.id === slot.id ? " active" : ""}`}
+                        onClick={() => setSelectedSlot(slot)}
+                        aria-pressed={selectedSlot?.id === slot.id}
+                      >
+                        {formatSlot(slot)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 — Customer info */}
+              <div className="booking-step reveal">
+                <div className="step-num" aria-hidden="true">3</div>
+                <div className="step-body">
+                  <p className="step-label">Your info</p>
+                  <div className="field-row">
+                    <div className="field">
+                      <label htmlFor="customer-name">Full name</label>
+                      <input
+                        id="customer-name"
+                        type="text"
+                        placeholder="Your name"
+                        value={customerForm.name}
+                        onChange={(e) =>
+                          setCustomerForm((p) => ({ ...p, name: e.target.value }))
+                        }
+                        autoComplete="name"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="customer-email">Email</label>
+                      <input
+                        id="customer-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={customerForm.email}
+                        onChange={(e) =>
+                          setCustomerForm((p) => ({ ...p, email: e.target.value }))
+                        }
+                        autoComplete="email"
+                      />
+                    </div>
+                  </div>
+
+                  {selectedService.name === "Mobile" && (
+                    <div className="field" style={{ marginTop: "0.75rem" }}>
+                      <label htmlFor="mobile-address">Service address</label>
+                      <input
+                        id="mobile-address"
+                        type="text"
+                        placeholder="Where should Russ meet you?"
+                        value={mobileAddress}
+                        onChange={(e) => setMobileAddress(e.target.value)}
+                        autoComplete="street-address"
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: "1.25rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <button
+                      className="btn-primary"
+                      onClick={handleBooking}
+                      disabled={bookingLoading}
+                    >
+                      {bookingLoading ? "Booking…" : "Confirm Booking"}
+                    </button>
+
+                    {bookingStatus && (
+                      <p className={statusClass(bookingStatus)} role="status">
+                        {statusText(bookingStatus)}
+                      </p>
+                    )}
+
+                    {user?.role === "OWNER" && (
+                      <a className="owner-link" href="/owner">
+                        Owner Schedule →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <Button className="primary" onClick={handleBooking} disabled={bookingLoading}>
-              {bookingLoading ? "Booking..." : "Confirm Booking"}
-            </Button>
-            {bookingStatus && <p className="status">{bookingStatus}</p>}
-            {user?.role === "OWNER" && (
-              <a className="owner-link" href="/owner">
-                Go to Owner Schedule
-              </a>
+          </div>
+
+          {/* Auth sidebar */}
+          <aside className="auth-sidebar" aria-label="Account">
+            <h3>Your Account</h3>
+            {user ? (
+              <div className="user-pill">
+                <div>
+                  <p style={{ fontWeight: 700, margin: "0 0 2px", fontSize: "0.9rem" }}>
+                    {user.name}
+                  </p>
+                  <p style={{ fontSize: "0.78rem", color: "var(--fg-muted)", margin: 0 }}>
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: "0.875rem", lineHeight: 1.6 }}>
+                Log in to manage your bookings and leave a review after your cut.
+              </p>
             )}
+          </aside>
+        </div>
+      </section>
+
+      {/* ══════════════════════════
+          BARBER
+      ══════════════════════════ */}
+      <section className="section barber-section" id="barber" aria-labelledby="barber-title">
+        <div className="barber-layout">
+          <div className="barber-photo-wrap reveal-left">
+            <div className="barber-photo-placeholder" aria-hidden="true">
+              <p>Photo coming soon</p>
+            </div>
+          </div>
+
+          <div className="barber-info reveal">
+            <span className="section-label">The Barber</span>
+            <h2 className="barber-name" id="barber-title">
+              Russ<span className="accent">.</span>
+            </h2>
+            <div className="barber-specialty" aria-label="Specialties">
+              <span className="barber-tag">Signature Fades</span>
+              <span className="barber-tag">Detail Work</span>
+              <span className="barber-tag">Grooming</span>
+              <span className="barber-tag">Mobile Cuts</span>
+            </div>
+            <p className="barber-bio">
+              Russ has been perfecting fades in the &apos;ville for years. Every client gets his
+              full attention — no shortcuts, no assembly line. From a quick lineup to a full
+              cut and beard detail, he brings the same focus to every session.
+              Mobile bookings available within 10 miles.
+            </p>
+            <button className="btn-primary" onClick={() => scrollTo("#book")}>
+              Book with Russ
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="section stylists" id="barber">
-        <div className="section-title">
-          <h2>Meet the Barber</h2>
-          <p>Your signature cut specialist.</p>
+      {/* ══════════════════════════
+          GALLERY
+      ══════════════════════════ */}
+      <section className="gallery" id="gallery" aria-labelledby="gallery-title">
+        <div className="gallery-header reveal">
+          <span className="section-label">The Work</span>
+          <h2 className="section-title" id="gallery-title">Gallery</h2>
         </div>
-        <div className="barber-card">
-          <div className="stylist-photo empty">
-            <span>Barber photo coming soon</span>
-          </div>
-          <div>
-            <h3>{barberProfile.name}</h3>
-            <p>{barberProfile.specialty}</p>
-            <p className="muted">Details coming soon.</p>
-          </div>
-        </div>
-      </section>
 
-      {user && (
-        <section className="section profile" id="profile">
-          <div className="section-title">
-            <h2>Your Profile</h2>
-            <p>Quick access to your account details.</p>
-          </div>
-          <div className="profile-card">
-            <h3>{user.name}</h3>
-            <p>{user.email}</p>
-            <p className="muted">Role: {user.role}</p>
-          </div>
-        </section>
-      )}
-
-      <section className="section gallery" id="gallery">
-        <div className="gallery-grid">
+        <div className="gallery-grid stagger" role="list">
           {galleryImages.map((img, index) => (
             <div
-              key={`${img}-${index}`}
+              key={img}
               className={`gallery-tile tile-${(index % 6) + 1}`}
               style={{ backgroundImage: `url(${img})` }}
-              onClick={() => setLightboxImage(img)}
-              role="button"
+              onClick={() => openLightbox(img, index)}
+              role="listitem button"
               tabIndex={0}
-              aria-label={`Gallery image ${index + 1}`}
-              onKeyDown={(e) => e.key === "Enter" && setLightboxImage(img)}
+              aria-label={`View cut ${index + 1} full size`}
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") && openLightbox(img, index)
+              }
             />
           ))}
         </div>
       </section>
 
+      {/* Lightbox */}
       {lightboxImage && (
-        <div className="lightbox" onClick={() => setLightboxImage("")} role="dialog" aria-label="Image lightbox" onKeyDown={(e) => e.key === "Escape" && setLightboxImage("")}>
-          <div className="lightbox-content">
-            <img src={lightboxImage} alt="Selected cut" loading="lazy" />
-          </div>
+        <div
+          className="lightbox"
+          onClick={(e) => e.target === e.currentTarget && closeLightbox()}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Gallery image ${lightboxIndex !== null ? lightboxIndex + 1 : ""}`}
+        >
+          <button
+            ref={closeBtnRef}
+            className="lightbox-close"
+            onClick={closeLightbox}
+            aria-label="Close image"
+          >
+            ✕
+          </button>
+          <img
+            src={lightboxImage}
+            alt={`Haircut example ${lightboxIndex !== null ? lightboxIndex + 1 : ""}`}
+            className="lightbox-img"
+            loading="lazy"
+          />
         </div>
       )}
 
-      <section className="section reviews" id="reviews">
-        <div className="section-title">
-          <h2>Client Reviews</h2>
-          <p>Living proof of the craft.</p>
+      {/* ══════════════════════════
+          REVIEWS
+      ══════════════════════════ */}
+      <section className="section reviews" id="reviews" aria-labelledby="reviews-title">
+        <div className="section-header reveal">
+          <span className="section-label">Client Reviews</span>
+          <h2 className="section-title" id="reviews-title">Living Proof</h2>
+          <p className="section-desc">What clients say after sitting in the chair.</p>
         </div>
-        <div className="review-grid">
-          {reviews.map((review) => (
-            <div key={review.id} className="review-card">
-              <strong>{review.name}</strong>
-              <span>{"\u2605".repeat(review.rating)}</span>
-              <p>{review.comment}</p>
-            </div>
-          ))}
-        </div>
-        <div className="review-form">
-          <select value={reviewForm.rating} onChange={(e) => setReviewForm({ ...reviewForm, rating: Number(e.target.value) })}>
-            {[5, 4, 3, 2, 1].map((value) => (
-              <option key={value} value={value}>
-                {value} Stars
-              </option>
+
+        {reviews.length > 0 && (
+          <div className="review-grid stagger">
+            {reviews.map((review) => (
+              <div key={review.id} className="review-card">
+                <StarRating rating={review.rating} />
+                <p className="review-name">{review.name}</p>
+                <p className="review-comment">{review.comment}</p>
+              </div>
             ))}
-          </select>
-          <Input placeholder="Share your experience" value={reviewForm.comment} onChange={(e) => setReviewForm({ ...reviewForm, comment: e.target.value })} />
-          <Button className="primary" onClick={handleReviewSubmit}>
-            Submit Review
-          </Button>
+          </div>
+        )}
+
+        {reviews.length === 0 && (
+          <p className="muted" style={{ marginBottom: "2.5rem", fontSize: "0.9rem" }}>
+            No reviews yet — be the first after your cut.
+          </p>
+        )}
+
+        {/* Submit a review */}
+        <div
+          className="review-submit reveal"
+          role="form"
+          aria-label="Submit a review"
+        >
+          <div>
+            <label className="review-submit-label" htmlFor="review-rating">
+              Rating
+            </label>
+            <select
+              id="review-rating"
+              value={reviewForm.rating}
+              onChange={(e) =>
+                setReviewForm({ ...reviewForm, rating: Number(e.target.value) })
+              }
+              style={{
+                height: "2.75rem",
+                width: "100%",
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-mid)",
+                borderRadius: "var(--radius)",
+                padding: "0 0.875rem",
+                color: "var(--fg)",
+                fontFamily: "var(--font-body)",
+                fontSize: "0.875rem",
+                outline: "none",
+              }}
+            >
+              {[5, 4, 3, 2, 1].map((v) => (
+                <option key={v} value={v}>
+                  {v} Stars
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="review-comment">Your review</label>
+            <input
+              id="review-comment"
+              type="text"
+              placeholder="Share your experience"
+              value={reviewForm.comment}
+              onChange={(e) =>
+                setReviewForm({ ...reviewForm, comment: e.target.value })
+              }
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn-primary" onClick={handleReviewSubmit}>
+              Submit
+            </button>
+          </div>
         </div>
+
+        {reviewStatus && (
+          <p
+            className={statusClass(reviewStatus)}
+            role="status"
+            style={{ marginTop: "0.75rem" }}
+          >
+            {statusText(reviewStatus)}
+          </p>
+        )}
       </section>
 
+      {/* ══════════════════════════
+          FOOTER
+      ══════════════════════════ */}
       <footer className="footer">
         <div className="footer-brand">
           <h3>d4gcutz</h3>
           <p>All rights reserved &middot; vycesolutions 2026</p>
         </div>
-        <div className="footer-carousel">
-          <h4>What clients say</h4>
-          {reviews.length === 0 ? (
-            <p className="muted">No reviews yet.</p>
-          ) : (
-            <div className="carousel-card">
-              <strong>{reviews[carouselIndex]?.name}</strong>
-              <span>{"\u2605".repeat(reviews[carouselIndex]?.rating || 0)}</span>
-              <p>{reviews[carouselIndex]?.comment}</p>
-              <div className="carousel-controls">
-                <button type="button" onClick={() => setCarouselIndex((prev) => (prev - 1 + reviews.length) % reviews.length)}>
-                  Prev
-                </button>
-                <button type="button" onClick={() => setCarouselIndex((prev) => (prev + 1) % reviews.length)}>
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+
+        <nav className="footer-nav" aria-label="Footer navigation">
+          {[
+            ["#services", "Services"],
+            ["#book", "Book"],
+            ["#gallery", "Gallery"],
+            ["#reviews", "Reviews"],
+          ].map(([href, label]) => (
+            <a
+              key={href}
+              href={href}
+              onClick={(e) => { e.preventDefault(); scrollTo(href); }}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
       </footer>
     </div>
   );
 }
-
-export default App;

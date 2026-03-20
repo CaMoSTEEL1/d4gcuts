@@ -1,20 +1,22 @@
 import * as React from "react";
 import { cva } from "class-variance-authority";
-
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7aa2ff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0f1a]",
+  "inline-flex items-center justify-center whitespace-nowrap text-sm font-bold uppercase tracking-widest transition-all duration-150 disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8952a] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f0f0f]",
   {
     variants: {
       variant: {
-        default: "bg-[#4c78ff] text-[#061022] hover:brightness-110",
-        ghost: "border border-[#3c4d7c] bg-transparent text-[#d9e5ff] hover:bg-[#12213f]",
-        secondary: "bg-[#111829] border border-[#27314a] text-[#d9e5ff] hover:border-[#4c78ff]",
+        default:
+          "bg-[#c8952a] text-black hover:brightness-110 rounded-sm active:scale-[0.98]",
+        ghost:
+          "border border-[#2a2a2a] bg-transparent text-[#f0ebe0] hover:border-[#f0ebe0] rounded-sm",
+        secondary:
+          "bg-[#181818] border border-[#1e1e1e] text-[#f0ebe0] hover:border-[#2a2a2a] rounded-sm",
       },
       size: {
         default: "h-10 px-5",
-        sm: "h-8 px-3",
+        sm: "h-8 px-3 text-xs",
         lg: "h-11 px-7 text-base",
       },
     },
