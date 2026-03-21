@@ -232,9 +232,8 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    fetchAvailability();
     fetchReviews();
-  }, [fetchAvailability, fetchReviews]);
+  }, [fetchReviews]);
 
   useEffect(() => {
     if (selectedDate) fetchAvailability(selectedDate);
@@ -505,10 +504,15 @@ export default function App() {
 
                     {/* Slot grid */}
                     <div className="slot-grid" role="group" aria-label="Available time slots">
-                      {loadingSlots && (
+                      {!selectedDate && (
+                        <p className="muted" style={{ fontSize: "0.875rem" }}>
+                          To check availability, choose a date.
+                        </p>
+                      )}
+                      {selectedDate && loadingSlots && (
                         <p className="muted" style={{ fontSize: "0.875rem" }}>Loading slots…</p>
                       )}
-                      {!loadingSlots && slotsError && (
+                      {selectedDate && !loadingSlots && slotsError && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                           <p className="status-err">
                             Couldn&apos;t connect to the server. Check your connection and try again.
@@ -522,12 +526,12 @@ export default function App() {
                           </button>
                         </div>
                       )}
-                      {!loadingSlots && !slotsError && availability.length === 0 && (
+                      {selectedDate && !loadingSlots && !slotsError && availability.length === 0 && (
                         <p className="muted" style={{ fontSize: "0.875rem" }}>
-                          No slots available. Select a date or check back later.
+                          No slots available for this date. Try another.
                         </p>
                       )}
-                      {!slotsError && availability.map((slot) => (
+                      {selectedDate && !slotsError && availability.map((slot) => (
                         <button
                           key={slot.id}
                           className={`slot${selectedSlot?.id === slot.id ? " active" : ""}`}
