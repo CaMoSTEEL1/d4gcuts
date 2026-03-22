@@ -23,8 +23,9 @@
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^6.9.16",
     "sqlite3": "^5.1.7",
-    "stripe": "^20.3.0"
+    "square": "^44.0.0"
   },
   "overrides": {
     "tar": "7.5.7"

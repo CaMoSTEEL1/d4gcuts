@@ -10,6 +10,59 @@ const router = express.Router();
 
 router.use(sanitizeBody);
 
+// Lazy-init nodemailer transporter
+let emailTransporter = null;
+const getEmailTransporter = () => {
+  if (!emailTransporter) {
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASS;
+    if (!user || !pass) return null;
+    const nodemailer = require("nodemailer");
+    emailTransporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST || "smtp.gmail.com",
+      port: parseInt(process.env.EMAIL_PORT || "587", 10),
+      secure: false,
+      auth: { user, pass },
+    });
+  }
+  return emailTransporter;
+};
+
+const sendConfirmationEmail = ({ booking, customerName, customerEmail }) => {
+  const transporter = getEmailTransporter();
+  if (!transporter) return Promise.resolve(); // skip if not configured
+
+  const timeStr = `${formatTimeEST(booking.start_time)}–${formatTimeEST(booking.end_time)} EST`;
+  const locationRow = booking.address
+    ? `<tr><td style="padding:8px 0;color:#666;">Location</td><td style="padding:8px 0;font-weight:600;">${booking.address}</td></tr>`
+    : "";
+
+  const html = `
+<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#111;">
+  <h2 style="margin-bottom:4px;">Booking Confirmed ✓</h2>
+  <p style="color:#555;margin-top:0;">Hey ${customerName.split(" ")[0]}, your appointment is locked in.</p>
+  <table style="border-collapse:collapse;width:100%;margin:20px 0;">
+    <tr><td style="padding:8px 0;color:#666;">Service</td><td style="padding:8px 0;font-weight:600;">${booking.service}</td></tr>
+    <tr><td style="padding:8px 0;color:#666;">Date</td><td style="padding:8px 0;font-weight:600;">${booking.date}</td></tr>
+    <tr><td style="padding:8px 0;color:#666;">Time</td><td style="padding:8px 0;font-weight:600;">${timeStr}</td></tr>
+    ${locationRow}
+  </table>
+  <p style="color:#555;">You can pay at your appointment or online when you book.</p>
+  <p style="color:#999;font-size:12px;margin-top:30px;">d4gcutz — Best Cutz in the 'ville</p>
+</div>`;
+
+  return transporter
+    .sendMail({
+      from: `"d4gcutz" <${process.env.EMAIL_USER}>`,
+      to: customerEmail,
+      subject: `Booking Confirmed — ${booking.service} on ${booking.date}`,
+      html,
+    })
+    .catch((emailErr) => {
+      console.error("[email] Confirmation failed:", emailErr.message);
+    });
+};
+
 const VALID_SERVICES = ["Full Cut", "Lineup", "Mobile"];
 
 const formatTimeEST = (time24) => {
@@ -198,6 +251,13 @@ router.post("/", bookingLimiter, optionalAuth, (req, res) => {
             customerPhone: phone,
           }).catch((notifyErr) => {
             console.error("[ntfy] Unexpected error:", notifyErr.message);
+          });
+
+          // Send confirmation email to customer (fire-and-forget)
+          sendConfirmationEmail({
+            booking: bookingPayload,
+            customerName: name,
+            customerEmail: email,
           });
 
           return res.json(bookingPayload);

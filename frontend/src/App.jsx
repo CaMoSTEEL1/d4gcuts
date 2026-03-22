@@ -133,7 +133,7 @@ function BookingConfirmed({ booking, onPayNow, onDismiss, paymentLoading }) {
       </div>
       <p className="confirmed-note">
         A confirmation was sent to {booking.customer_email}. If paying online,
-        you&apos;ll be redirected to Stripe&apos;s secure checkout.
+        you&apos;ll be redirected to Square&apos;s secure checkout.
       </p>
     </div>
   );
@@ -327,7 +327,7 @@ export default function App() {
         setBookingStatus(err(data.message || "Payment setup failed. You can pay at your appointment."));
         return;
       }
-      // Redirect to Stripe-hosted checkout
+      // Redirect to Square-hosted checkout
       window.location.href = data.url;
     } catch (e) {
       setBookingStatus(err("Payment unavailable. You can pay cash at your appointment."));
@@ -461,7 +461,10 @@ export default function App() {
               <BookingConfirmed
                 booking={confirmedBooking}
                 onPayNow={handlePayNow}
-                onDismiss={() => { setConfirmedBooking(null); setBookingStatus(""); }}
+                onDismiss={() => {
+                  setConfirmedBooking(null);
+                  setBookingStatus(ok("You're all set — your slot is reserved. Pay when you arrive."));
+                }}
                 paymentLoading={paymentLoading}
               />
             ) : (
@@ -643,7 +646,7 @@ export default function App() {
             )}
             <div className="pay-badge">
               <span className="pay-badge-label">Secure payments by</span>
-              <span className="pay-badge-brand">Stripe</span>
+              <span className="pay-badge-brand">Square</span>
             </div>
           </aside>
         </div>
